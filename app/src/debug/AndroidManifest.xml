@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Candidate-only QNN GPU runs need access to the device's public
+             OpenCL driver. Promote this declaration to the main manifest only
+             if a GPU backend passes the quality and performance gates. -->
+        <uses-native-library
+            android:name="libOpenCL.so"
+            android:required="false" />
+    </application>
+</manifest>
