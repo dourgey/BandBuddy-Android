@@ -642,7 +642,7 @@ class DemucsInferenceInstrumentedTest {
             }
             MultiStemPlayer().use { player ->
                 player.load(song.stems, positionMs = 0L, speed = 1f)
-                player.setMix(StemType.entries.associateWith { TrackState() }, masterVolume = 0f)
+                player.setMix(StemType.entries.associateWith { TrackState(volume = 0f) })
                 player.play()
                 SystemClock.sleep(350L)
                 assertTrue("$title six-stem transport did not start", player.isPlaying && player.positionMs > 0L)
@@ -685,7 +685,7 @@ class DemucsInferenceInstrumentedTest {
             }
             MultiStemPlayer().use { player ->
                 player.load(stems, positionMs = 0, speed = 1f)
-                player.setMix(StemType.entries.associateWith { TrackState() }, masterVolume = 0f)
+                player.setMix(StemType.entries.associateWith { TrackState(volume = 0f) })
                 player.play()
                 Thread.sleep(350)
                 assertTrue(player.isPlaying)
@@ -822,7 +822,7 @@ class DemucsInferenceInstrumentedTest {
         try {
             MultiStemPlayer().use { player ->
                 player.load(stems, positionMs = 0, speed = 1f)
-                player.setMix(StemType.entries.associateWith { TrackState() }, masterVolume = 0f)
+                player.setMix(StemType.entries.associateWith { TrackState(volume = 0f) })
                 player.setSpeed(.8f)
                 player.play()
                 Thread.sleep(450)

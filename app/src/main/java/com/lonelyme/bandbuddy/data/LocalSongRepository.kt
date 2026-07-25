@@ -51,7 +51,6 @@ data class PracticeState(
     val loopA: Long = 0,
     val loopB: Long = 0,
     val loopEnabled: Boolean = false,
-    val masterVolume: Float = 1f,
     val metronomeEnabled: Boolean = false,
     val metronomeBpm: Float = 120f,
     val metronomeOffsetMs: Long = 0,
@@ -89,7 +88,6 @@ fun PracticeState.normalized(): PracticeState {
         loopA = loopA.coerceAtLeast(0),
         loopB = loopB.coerceAtLeast(0),
         loopEnabled = loopEnabled && loopB > loopA,
-        masterVolume = masterVolume.coerceIn(0f, 1f),
         metronomeBpm = bpm,
         metronomeOffsetMs = normalizeBeatOffsetMs(metronomeOffsetMs, bpm),
         metronomeVolume = metronomeVolume.takeIf(Float::isFinite)?.coerceIn(.2f, 1f) ?: 1f,
@@ -337,7 +335,7 @@ class LocalSongRepository(private val context: Context) {
         put("practice", JSONObject().apply {
             put("positionMs", song.practice.positionMs); put("speed", song.practice.speed.toDouble())
             put("loopA", song.practice.loopA); put("loopB", song.practice.loopB)
-            put("loopEnabled", song.practice.loopEnabled); put("masterVolume", song.practice.masterVolume.toDouble())
+            put("loopEnabled", song.practice.loopEnabled)
             put("metronomeEnabled", song.practice.metronomeEnabled)
             put("metronomeBpm", song.practice.metronomeBpm.toDouble())
             put("metronomeOffsetMs", song.practice.metronomeOffsetMs)
@@ -366,9 +364,19 @@ class LocalSongRepository(private val context: Context) {
         if (sourcePath == null && stems.isEmpty()) return null
         val practiceJson = value.optJSONObject("practice") ?: JSONObject()
         val tracksJson = practiceJson.optJSONObject("tracks") ?: JSONObject()
+        val legacyMasterGain = practiceJson
+            .optDouble("masterVolume", 1.0)
+            .toFloat()
+            .takeIf(Float::isFinite)
+            ?.coerceIn(0f, 1f)
+            ?: 1f
         val tracks = StemType.entries.associateWith { type ->
             val state = tracksJson.optJSONObject(type.name) ?: JSONObject()
-            TrackState(state.optBoolean("muted"), state.optBoolean("solo"), state.optDouble("volume", 1.0).toFloat())
+            TrackState(
+                muted = state.optBoolean("muted"),
+                solo = state.optBoolean("solo"),
+                volume = state.optDouble("volume", 1.0).toFloat() * legacyMasterGain,
+            )
         }
         return SongRecord(
             id = value.getString("id"), title = value.getString("title"), artist = value.optString("artist", "未知艺人"),
@@ -381,7 +389,7 @@ class LocalSongRepository(private val context: Context) {
             practice = PracticeState(
                 positionMs = practiceJson.optLong("positionMs"), speed = practiceJson.optDouble("speed", 1.0).toFloat(),
                 loopA = practiceJson.optLong("loopA"), loopB = practiceJson.optLong("loopB"),
-                loopEnabled = practiceJson.optBoolean("loopEnabled"), masterVolume = practiceJson.optDouble("masterVolume", 1.0).toFloat(),
+                loopEnabled = practiceJson.optBoolean("loopEnabled"),
                 metronomeEnabled = practiceJson.optBoolean("metronomeEnabled"),
                 metronomeBpm = practiceJson.optDouble("metronomeBpm", 120.0).toFloat(),
                 metronomeOffsetMs = practiceJson.optLong("metronomeOffsetMs"),

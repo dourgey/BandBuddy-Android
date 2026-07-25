@@ -14,7 +14,6 @@ import kotlin.math.abs
 class MultiStemPlayer : Closeable {
     private val players = linkedMapOf<StemType, MediaPlayer>()
     private var tracks: Map<StemType, TrackState> = emptyMap()
-    private var masterVolume = 1f
     private var driftViolationCount = 0
     private var driftOutliers: Set<StemType> = emptySet()
     private var lastDriftCorrectionAtMs = 0L
@@ -80,12 +79,11 @@ class MultiStemPlayer : Closeable {
     }
 
     @Synchronized
-    fun setMix(tracks: Map<StemType, TrackState>, masterVolume: Float) {
+    fun setMix(tracks: Map<StemType, TrackState>) {
         val soloType = StemType.entries.firstOrNull { tracks[it]?.solo == true }
         this.tracks = StemType.entries.associateWith { type ->
             (tracks[type] ?: TrackState()).let { it.copy(solo = it.solo && type == soloType) }
         }
-        this.masterVolume = masterVolume
         applyMix()
     }
 
@@ -140,7 +138,7 @@ class MultiStemPlayer : Closeable {
         players.forEach { (type, player) ->
             val state = tracks[type] ?: TrackState()
             val audible = !state.muted && (!hasSolo || state.solo)
-            val gain = if (audible) (state.volume * masterVolume).coerceIn(0f, 1f) else 0f
+            val gain = if (audible) state.volume.coerceIn(0f, 1f) else 0f
             player.setVolume(gain, gain)
         }
     }
