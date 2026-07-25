@@ -225,7 +225,7 @@ class PlaybackService : Service() {
         currentSong = song
         practice = song.practice.normalized()
         player.load(song.stems, practice.positionMs, practice.speed)
-        player.setMix(practice.tracks, practice.masterVolume)
+        player.setMix(practice.tracks)
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(CURRENT_SONG, song.id).apply()
         updateMetadata()
         updatePlaybackState()
@@ -239,7 +239,7 @@ class PlaybackService : Service() {
             normalized.metronomeOffsetMs != practice.metronomeOffsetMs ||
             speedChanged
         practice = normalized
-        player.setMix(normalized.tracks, normalized.masterVolume)
+        player.setMix(normalized.tracks)
         if (speedChanged) player.setSpeed(normalized.speed)
         if (isCountingIn && !normalized.metronomeEnabled) {
             val generation = playbackGeneration
@@ -407,9 +407,9 @@ class PlaybackService : Service() {
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setOngoing(isPlayingOrCountingIn)
-            .addAction(Notification.Action.Builder(Icon.createWithResource(this, android.R.drawable.ic_media_rew), "后退 5 秒", serviceIntent(ACTION_BACK, 1)).build())
-            .addAction(Notification.Action.Builder(Icon.createWithResource(this, if (isPlayingOrCountingIn) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play), if (isPlayingOrCountingIn) "暂停" else "播放", serviceIntent(ACTION_TOGGLE, 2)).build())
-            .addAction(Notification.Action.Builder(Icon.createWithResource(this, android.R.drawable.ic_media_ff), "前进 5 秒", serviceIntent(ACTION_FORWARD, 3)).build())
+            .addAction(Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_seek_back), "后退 5 秒", serviceIntent(ACTION_BACK, 1)).build())
+            .addAction(Notification.Action.Builder(Icon.createWithResource(this, if (isPlayingOrCountingIn) R.drawable.ic_pause else R.drawable.ic_play), if (isPlayingOrCountingIn) "暂停" else "播放", serviceIntent(ACTION_TOGGLE, 2)).build())
+            .addAction(Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_seek_forward), "前进 5 秒", serviceIntent(ACTION_FORWARD, 3)).build())
             .setStyle(style)
             .build()
     }

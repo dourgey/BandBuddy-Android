@@ -93,7 +93,6 @@ import com.lonelyme.bandbuddy.data.SongRecord
 import com.lonelyme.bandbuddy.data.SongStatus
 import com.lonelyme.bandbuddy.data.StemType
 import com.lonelyme.bandbuddy.data.TrackState
-import com.lonelyme.bandbuddy.data.normalizeBeatOffsetMs
 import com.lonelyme.bandbuddy.data.withTrackState
 import com.lonelyme.bandbuddy.engine.AudioDecoder
 import com.lonelyme.bandbuddy.engine.BeatGridDetector
@@ -473,7 +472,7 @@ private fun LibraryScreen(
 @Composable
 private fun BrandRow(onSettings: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        RecordArt("B", Modifier.size(34.dp), Color(0xFFC89B66))
+        AppIcon(Modifier.size(34.dp))
         Spacer(Modifier.width(9.dp)); Text("BandBuddy", fontSize = 21.sp, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Black)
         Spacer(Modifier.weight(1f))
         Text("⚙", fontSize = 21.sp, color = MutedInk, modifier = Modifier.clip(CircleShape).clickable(onClick = onSettings).padding(8.dp))
@@ -483,7 +482,7 @@ private fun BrandRow(onSettings: () -> Unit) {
 @Composable
 private fun EmptyLibrary(hasQuery: Boolean, onImport: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 48.dp, bottom = 80.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        RecordArt("", Modifier.size(92.dp), Color(0xFFD8B07A))
+        AppIcon(Modifier.size(92.dp))
         Spacer(Modifier.height(24.dp))
         Text(if (hasQuery) "没有匹配的歌曲" else "曲库还是空的", fontSize = 18.sp, fontWeight = FontWeight.Bold)
         Text(if (hasQuery) "换个关键词试试" else "导入一首歌曲，或直接导入六个已有分轨", color = MutedInk, fontSize = 13.sp, modifier = Modifier.padding(top = 7.dp))
@@ -573,6 +572,7 @@ private fun PracticeScreen(
     var position by remember(song.id) { mutableLongStateOf(song.practice.positionMs) }
     var loaded by remember(song.id) { mutableStateOf(false) }
     var playing by remember(song.id) { mutableStateOf(false) }
+    var songPlaying by remember(song.id) { mutableStateOf(false) }
     var countInRemaining by remember(song.id) { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var beatAnalysisRunning by remember(song.id) { mutableStateOf(false) }
@@ -683,7 +683,11 @@ private fun PracticeScreen(
             override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
                 engine = (binder as? PlaybackService.PlaybackBinder)?.service
             }
-            override fun onServiceDisconnected(name: ComponentName?) { engine = null; loaded = false }
+            override fun onServiceDisconnected(name: ComponentName?) {
+                engine = null
+                loaded = false
+                songPlaying = false
+            }
         }
         context.bindService(Intent(context, PlaybackService::class.java), connection, Context.BIND_AUTO_CREATE)
         onDispose {
@@ -712,6 +716,7 @@ private fun PracticeScreen(
         while (service.isLoaded) {
             position = service.positionMs
             playing = service.isPlayingOrCountingIn
+            songPlaying = service.isPlaying
             countInRemaining = service.countInRemaining
             delay(150)
         }
@@ -760,13 +765,14 @@ private fun PracticeScreen(
                     practice = practice,
                     position = position,
                     beatAnalysisRunning = beatAnalysisRunning,
+                    isSongPlaying = songPlaying,
                     onDetectBeatGrid = ::requestBeatAnalysis,
                     onPreviewMetronome = { engine?.previewMetronome() },
+                    readPlaybackPosition = {
+                        engine?.takeIf(PlaybackService::isPlaying)?.positionMs
+                    },
                     onChange = ::update
                 )
-                Spacer(Modifier.height(18.dp))
-                Text("总音量", color = MutedInk, fontSize = 11.sp)
-                Slider(practice.masterVolume, { update(practice.copy(masterVolume = it)) }, colors = compactSliderColors())
                 Spacer(Modifier.height(12.dp))
             }
         }
@@ -1020,8 +1026,10 @@ private fun LoopAndSpeed(
     practice: PracticeState,
     position: Long,
     beatAnalysisRunning: Boolean,
+    isSongPlaying: Boolean,
     onDetectBeatGrid: () -> Unit,
     onPreviewMetronome: () -> Unit,
+    readPlaybackPosition: () -> Long?,
     onChange: (PracticeState) -> Unit
 ) {
     var showMetronomeSettings by remember { mutableStateOf(false) }
@@ -1078,248 +1086,13 @@ private fun LoopAndSpeed(
         MetronomeSettingsDialog(
             practice = practice,
             beatAnalysisRunning = beatAnalysisRunning,
+            isSongPlaying = isSongPlaying,
             onDetectBeatGrid = onDetectBeatGrid,
             onPreview = onPreviewMetronome,
+            readPlaybackPosition = readPlaybackPosition,
             onChange = onChange,
             onDismiss = { showMetronomeSettings = false }
         )
-    }
-}
-
-@Composable
-private fun MetronomeSettingsDialog(
-    practice: PracticeState,
-    beatAnalysisRunning: Boolean,
-    onDetectBeatGrid: () -> Unit,
-    onPreview: () -> Unit,
-    onChange: (PracticeState) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val offsetLimit = (30_000f / practice.metronomeBpm).roundToInt().coerceAtLeast(1)
-    val analysisStatus = when {
-        beatAnalysisRunning -> "正在自动分析 BPM 和拍点…"
-        practice.metronomeConfidence > 0f ->
-            "已自动检测并对齐拍点 · 可信度 ${(practice.metronomeConfidence * 100).roundToInt()}%"
-        practice.metronomeAnalysisDone -> "未检测到稳定节拍，可手动设置或重新检测"
-        else -> "尚未分析，进入练习室后会自动检测"
-    }
-    val displayedAnalysisStatus = when {
-        beatAnalysisRunning -> "正在综合鼓轨与贝斯分析 BPM 和拍点…"
-        practice.metronomeAnalysisVersion >= BeatGridDetector.ANALYSIS_VERSION &&
-            practice.metronomeConfidence > 0f ->
-            "已综合鼓轨与贝斯并对齐拍点 · 可信度 ${(practice.metronomeConfidence * 100).roundToInt()}%"
-        else -> analysisStatus
-    }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Paper,
-        shape = RoundedCornerShape(22.dp),
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                MetronomeIcon(Modifier.size(22.dp))
-                Spacer(Modifier.width(9.dp))
-                Text("节拍器设置", fontFamily = FontFamily.Serif, fontWeight = FontWeight.Black, fontSize = 22.sp)
-            }
-        },
-        text = {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
-                verticalArrangement = Arrangement.spacedBy(9.dp)
-            ) {
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("播放时发声", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text("预备拍结束后继续跟随歌曲打拍", fontSize = 9.sp, color = MutedInk)
-                        }
-                        MiniButton(if (practice.metronomeEnabled) "关闭" else "开启", practice.metronomeEnabled) {
-                            onChange(practice.copy(metronomeEnabled = !practice.metronomeEnabled))
-                        }
-                    }
-                    HorizontalDivider(Modifier.padding(top = 11.dp), color = Line)
-                }
-                item {
-                    Column(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)).background(Sand)
-                            .padding(horizontal = 12.dp, vertical = 10.dp)
-                    ) {
-                        Text("自动检测 BPM 与拍点", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Text(displayedAnalysisStatus, fontSize = 9.sp, color = MutedInk, modifier = Modifier.padding(top = 3.dp))
-                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            OutlinedButton(
-                                onClick = onDetectBeatGrid,
-                                enabled = !beatAnalysisRunning,
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text(if (beatAnalysisRunning) "检测中…" else "重新自动检测", fontSize = 10.sp, color = Ink)
-                            }
-                            OutlinedButton(
-                                onClick = onPreview,
-                                shape = RoundedCornerShape(10.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                            ) {
-                                Text("试听节拍", fontSize = 10.sp, color = Ink)
-                            }
-                        }
-                    }
-                }
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("速度", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.weight(1f))
-                        MiniButton("−", false) {
-                            val bpm = (practice.metronomeBpm - 1f).coerceIn(20f, 400f)
-                            onChange(
-                                practice.copy(
-                                    metronomeBpm = bpm,
-                                    metronomeOffsetMs = normalizeBeatOffsetMs(practice.metronomeOffsetMs, bpm)
-                                )
-                            )
-                        }
-                        Text(
-                            "${formatBpm(practice.metronomeBpm)} BPM",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 9.dp)
-                        )
-                        MiniButton("+", false) {
-                            val bpm = (practice.metronomeBpm + 1f).coerceIn(20f, 400f)
-                            onChange(
-                                practice.copy(
-                                    metronomeBpm = bpm,
-                                    metronomeOffsetMs = normalizeBeatOffsetMs(practice.metronomeOffsetMs, bpm)
-                                )
-                            )
-                        }
-                    }
-                    Slider(
-                        value = practice.metronomeBpm,
-                        onValueChange = { bpm ->
-                            val rounded = (bpm * 10).roundToInt() / 10f
-                            onChange(
-                                practice.copy(
-                                    metronomeBpm = rounded,
-                                    metronomeOffsetMs = normalizeBeatOffsetMs(practice.metronomeOffsetMs, rounded)
-                                )
-                            )
-                        },
-                        valueRange = 20f..400f,
-                        modifier = Modifier.fillMaxWidth().height(30.dp),
-                        colors = compactSliderColors()
-                    )
-                }
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("拍点微调", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Text("负值提前 · 正值延后", fontSize = 9.sp, color = MutedInk)
-                        }
-                        Text(
-                            "${if (practice.metronomeOffsetMs >= 0) "+" else ""}${practice.metronomeOffsetMs} ms",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        MiniButton("−10", false) {
-                            onChange(
-                                practice.copy(
-                                    metronomeOffsetMs = normalizeBeatOffsetMs(
-                                        practice.metronomeOffsetMs - 10,
-                                        practice.metronomeBpm
-                                    )
-                                )
-                            )
-                        }
-                        Slider(
-                            value = practice.metronomeOffsetMs.coerceIn(
-                                -offsetLimit.toLong(),
-                                offsetLimit.toLong()
-                            ).toFloat(),
-                            onValueChange = {
-                                onChange(
-                                    practice.copy(
-                                        metronomeOffsetMs = normalizeBeatOffsetMs(
-                                            it.roundToInt().toLong(),
-                                            practice.metronomeBpm
-                                        )
-                                    )
-                                )
-                            },
-                            valueRange = -offsetLimit.toFloat()..offsetLimit.toFloat(),
-                            modifier = Modifier.weight(1f).height(30.dp),
-                            colors = compactSliderColors()
-                        )
-                        MiniButton("+10", false) {
-                            onChange(
-                                practice.copy(
-                                    metronomeOffsetMs = normalizeBeatOffsetMs(
-                                        practice.metronomeOffsetMs + 10,
-                                        practice.metronomeBpm
-                                    )
-                                )
-                            )
-                        }
-                    }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        MiniButton("重置拍点", false) { onChange(practice.copy(metronomeOffsetMs = 0)) }
-                    }
-                }
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("节拍音量", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.weight(1f))
-                        Text("${(practice.metronomeVolume * 100).roundToInt()}%", fontSize = 9.sp, color = MutedInk)
-                    }
-                    Slider(
-                        value = practice.metronomeVolume,
-                        onValueChange = { onChange(practice.copy(metronomeVolume = it)) },
-                        valueRange = .2f..1f,
-                        modifier = Modifier.fillMaxWidth().height(30.dp),
-                        colors = compactSliderColors()
-                    )
-                }
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("预备拍", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            Text("正式播放前先响几拍", fontSize = 9.sp, color = MutedInk)
-                        }
-                        listOf(0, 4, 8).forEach { beats ->
-                            MiniButton(if (beats == 0) "关闭" else "$beats 拍", practice.countInBeats == beats) {
-                                onChange(practice.copy(countInBeats = beats))
-                            }
-                            if (beats != 8) Spacer(Modifier.width(5.dp))
-                        }
-                    }
-                    Text(
-                        "节拍器会随播放速度同步；自动检测会同时保存 BPM 和拍点偏移。",
-                        fontSize = 8.sp,
-                        color = MutedInk,
-                        modifier = Modifier.padding(top = 10.dp)
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("完成", color = Ink, fontWeight = FontWeight.Bold)
-            }
-        }
-    )
-}
-
-@Composable
-private fun MetronomeIcon(modifier: Modifier = Modifier, color: Color = Ink) {
-    Canvas(modifier) {
-        val stroke = 1.5.dp.toPx()
-        drawLine(color, Offset(size.width * .33f, size.height * .12f), Offset(size.width * .16f, size.height * .88f), stroke, StrokeCap.Round)
-        drawLine(color, Offset(size.width * .67f, size.height * .12f), Offset(size.width * .84f, size.height * .88f), stroke, StrokeCap.Round)
-        drawLine(color, Offset(size.width * .16f, size.height * .88f), Offset(size.width * .84f, size.height * .88f), stroke, StrokeCap.Round)
-        drawLine(color, Offset(size.width * .5f, size.height * .7f), Offset(size.width * .68f, size.height * .25f), stroke, StrokeCap.Round)
-        drawCircle(color, radius = stroke * 1.25f, center = Offset(size.width * .69f, size.height * .23f))
-        drawLine(color, Offset(size.width * .27f, size.height * .68f), Offset(size.width * .73f, size.height * .68f), stroke * .75f, StrokeCap.Round)
     }
 }
 
@@ -1706,8 +1479,6 @@ private fun RecordArt(letter: String, modifier: Modifier, accent: Color) {
 }
 
 @Composable
-private fun compactSliderColors() = SliderDefaults.colors(thumbColor = Ink, activeTrackColor = Ink, inactiveTrackColor = Line)
-
 private fun accentFor(id: String): Color = listOf(Color(0xFFD9B06F), Color(0xFF98B9C3), Color(0xFFAA9AC1), Color(0xFFA9B68C), Color(0xFFC99373))[kotlin.math.abs(id.hashCode()) % 5]
 private fun separationEta(song: SongRecord, percent: Int): String {
     val startedAt = song.processingStartedAt ?: return "正在估算剩余时间"

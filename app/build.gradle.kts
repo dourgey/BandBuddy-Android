@@ -20,8 +20,8 @@ android {
         // lets the connected physical device run the development build.
         minSdk = 29
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
         buildConfigField("String", "MODELSCOPE_REPOSITORY", "\"${modelScopeRepository.get()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
