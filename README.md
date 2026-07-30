@@ -4,7 +4,7 @@
 
 <h1 align="center">BandBuddy</h1>
 
-<p align="center">在 Android 手机上本地完成六轨分离，并把歌曲变成可循环、可调速、可独奏的练习伴奏。</p>
+<p align="center">在 Android 手机和平板上本地完成六轨分离，并把歌曲变成可循环、可调速、可独奏的练习伴奏。</p>
 
 ## 下载
 
@@ -12,7 +12,7 @@
 
 安装后请进入“设置”下载约 112 MiB 的固定版本 HTDemucs 模型。模型下载完成并校验通过后，才能开始自动分轨。
 
-> 当前版本依赖 Qualcomm HTP NPU 和设备提供的 FastRPC 运行时，不会静默回退到 CPU。项目已在 Snapdragon 8 Gen 3（SM8650）设备上验证；其他芯片或未开放 HTP 运行时的设备可能无法安装或执行分轨。
+> 分轨会优先使用经过验证的 Qualcomm HTP NPU；设备未提供 HTP FP16，或 QNN/FastRPC 初始化失败时，会自动改用 LiteRT/XNNPACK 的完整 FP32 CPU 路径。CPU 兼容模式无需 NPU，但速度取决于设备算力，通常更慢。
 
 ## 功能
 
@@ -22,7 +22,12 @@
 - 练习工具：0.5×–1.5× 调速、A/B 循环、自动节拍分析、连续点击手动测定 BPM 与拍点、节拍器、拍点微调和 4/8 拍预备拍。
 - 波形与播放进度显示，支持带时间轴的 LRC 歌词。
 - 本地曲库、搜索、拼音搜索、收藏、歌曲信息编辑和失败任务重试。
+- 手机与 Pad 响应式界面：窄屏使用底部导航，Pad 使用常驻侧栏、曲库网格及练习室/设置双栏布局。
 - 模型断点下载、SHA-256 校验、分轨进度通知和任务取消。
+
+界面会按窗口宽度自动切换：小于 `600dp` 使用手机版，达到 `600dp` 使用 Pad 版；较窄的分屏窗口会自动回到手机版布局。无需分别安装两个 APK。
+
+Android Studio 的 Compose Preview 中提供了 `390 × 844dp` 手机版和 `1024 × 768dp` Pad 版曲库预览，便于同时检查两套界面。
 
 ## 分轨与本地存储
 
@@ -71,13 +76,13 @@ BAND_BUDDY_MODELSCOPE_REPOSITORY=owner/repository
 ./gradlew testDebugUnitTest
 ```
 
-NPU、QNN、原生 DSP 和完整六轨推理需要兼容的 Qualcomm 真机。详细的模型转换、数值验证、性能结果与真机测试命令见 [HTDemucs 端侧适配文档](docs/htdemucs-on-device-porting.md)。
+NPU/QNN 专项测试需要兼容的 Qualcomm 真机；CPU 回退、原生 DSP 和完整六轨推理可在不提供 HTP FP16 的 `arm64-v8a` 设备上运行。详细的模型转换、数值验证、性能结果与真机测试命令见 [HTDemucs 端侧适配文档](docs/htdemucs-on-device-porting.md)。
 
 ## 技术栈
 
 - Kotlin、Jetpack Compose、WorkManager
 - LiteRT / TensorFlow Lite
-- Qualcomm QNN HTP Delegate
+- Qualcomm QNN HTP Delegate（优先）与 XNNPACK FP32 CPU 回退
 - C++20、JNI、Android NDK
 - Android MediaCodec / MediaMuxer
 

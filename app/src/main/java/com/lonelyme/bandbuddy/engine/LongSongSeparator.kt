@@ -74,18 +74,30 @@ class LongSongSeparator(private val context: Context) {
 
         try {
             RandomAccessFile(decoded.file, "r").use { pcm ->
+                val preferredBackend = runtime.preferredBackend()
                 onProgress(Progress(
-                    if (runtime.hasCompiledCache()) "加载 NPU 模型" else "首次准备 NPU · 约 1 分钟",
+                    when {
+                        preferredBackend == ModelRuntime.Backend.CPU ->
+                            "准备 CPU FP32 兼容模式 · 速度较慢"
+                        runtime.hasCompiledCache() ->
+                            "加载 NPU / CPU 混合模型"
+                        else ->
+                            "首次准备 NPU · 约 1 分钟"
+                    },
                     6
                 ))
                 DemucsWindowSeparator(runtime).use { separator ->
+                    val separationStage = when (separator.backend) {
+                        ModelRuntime.Backend.QUALCOMM_HTP -> "正在本地分轨"
+                        ModelRuntime.Backend.CPU -> "CPU 兼容模式分轨 · 速度较慢"
+                    }
                     while (offset < decoded.frames) {
                         if (isCancelled()) error("CANCELLED")
                         val actual = min(WINDOW.toLong(), decoded.frames - offset).toInt()
                         val padLeft = (WINDOW - actual) / 2
                         readWindowInto(pcm, offset, actual, padLeft, encodedWindow, mix)
                         onProgress(Progress(
-                            "正在本地分轨",
+                            separationStage,
                             8 + (windowIndex * 85 / windowCount)
                         ))
                         separator.separateInto(mix, separated)

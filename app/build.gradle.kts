@@ -20,8 +20,8 @@ android {
         // lets the connected physical device run the development build.
         minSdk = 29
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
         buildConfigField("String", "MODELSCOPE_REPOSITORY", "\"${modelScopeRepository.get()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -79,8 +79,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation("androidx.work:work-runtime-ktx:2.10.1")
-    // The model is executed by Qualcomm's QNN delegate on the HTP NPU. The
-    // versions are pinned together so the Java delegate and bundled QNN
+    // Compatible devices accelerate the model with Qualcomm's QNN delegate on
+    // the HTP NPU. Other devices use TensorFlow Lite's XNNPACK CPU backend.
+    // The QNN versions are pinned together so the Java delegate and bundled
     // runtime use one ABI.
     // Qualcomm's delegate currently binds to the stable org.tensorflow.lite
     // Java Delegate API (the same runtime used by Qualcomm's Android samples).

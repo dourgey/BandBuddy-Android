@@ -1,6 +1,7 @@
 package com.lonelyme.bandbuddy.engine
 
 import android.content.Context
+import android.util.Log
 import com.lonelyme.bandbuddy.model.ModelSpec
 import com.lonelyme.bandbuddy.model.ModelStore
 import com.qualcomm.qti.QnnDelegate
@@ -12,17 +13,18 @@ import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 
 /**
- * Opens the fixed-shape six-stem neural core as a verified mixed-precision graph.
+ * Opens the fixed-shape six-stem neural core using the fastest available backend.
  *
  * The compute-heavy convolutions run on Qualcomm HTP FP16/HMX. Normalization
  * and attention remain on the FP32 CPU path because running those reductions
- * in HTP FP16 measurably corrupts Demucs output. HTP is mandatory: if the
- * delegate cannot be created, separation fails instead of silently presenting
- * a CPU-only run as NPU acceleration.
+ * in HTP FP16 measurably corrupts Demucs output. Devices without a usable HTP
+ * runtime execute the complete FP32 graph through the LiteRT CPU/XNNPACK path.
  */
 class ModelRuntime(private val context: Context) {
     companion object {
+        private const val TAG = "BandBuddyRuntime"
         private const val MODEL_OPERATOR_COUNT = 3_504
+        private const val CPU_THREADS = 4
         private val HTP_NODE_IDS = setOf(
             586, 867,
             2639, 2645, 2777, 2784, 2923, 2929,
@@ -50,6 +52,11 @@ class ModelRuntime(private val context: Context) {
         }
     }
 
+    enum class Backend {
+        QUALCOMM_HTP,
+        CPU,
+    }
+
     fun isInstalled(): Boolean = ModelStore(context).isCurrentReady()
 
     fun hasCompiledCache(): Boolean = qnnCacheDirectory().listFiles().orEmpty().any {
@@ -59,14 +66,39 @@ class ModelRuntime(private val context: Context) {
     /** A light-weight capability check suitable for the settings screen. */
     fun statusSummary(): String {
         cleanupLegacyOrtArtifacts()
-        requireHtpFp16()
-        return "Qualcomm HTP NPU · QNN ${QnnDelegate.getVersion().joinToString(".")} · 混合精度"
+        requireCommonRuntime()
+        return if (supportsHtpFp16()) {
+            val qnnVersion = runCatching { QnnDelegate.getVersion().joinToString(".") }
+                .getOrDefault("可用")
+            "Qualcomm HTP NPU · QNN $qnnVersion · 失败时自动回退 CPU"
+        } else {
+            "CPU FP32 兼容模式 · 无需 NPU，分轨速度较慢"
+        }
+    }
+
+    fun preferredBackend(): Backend {
+        cleanupLegacyOrtArtifacts()
+        requireCommonRuntime()
+        return if (supportsHtpFp16()) Backend.QUALCOMM_HTP else Backend.CPU
     }
 
     fun openSession(): QnnSession {
         cleanupLegacyOrtArtifacts()
-        requireHtpFp16()
+        requireCommonRuntime()
         val model = mapModel()
+        if (supportsHtpFp16()) {
+            try {
+                return openHtpSession(model)
+            } catch (error: Throwable) {
+                if (error is VirtualMachineError || error is ThreadDeath) throw error
+                Log.w(TAG, "HTP initialization failed; falling back to CPU FP32", error)
+                model.rewind()
+            }
+        }
+        return openCpuSession(model)
+    }
+
+    private fun openHtpSession(model: MappedByteBuffer): QnnSession {
         val qnnCache = qnnCacheDirectory().apply { mkdirs() }
         val qnnOptions = QnnDelegate.Options().apply {
             setSkelLibraryDir(context.applicationInfo.nativeLibraryDir)
@@ -87,36 +119,61 @@ class ModelRuntime(private val context: Context) {
             setLogLevel(QnnDelegate.Options.LogLevel.LOG_LEVEL_INFO)
         }
 
-        val delegate = QnnDelegate(qnnOptions)
+        var delegate: QnnDelegate? = null
+        var interpreter: Interpreter? = null
         try {
+            delegate = QnnDelegate(qnnOptions)
             check(delegate.isAvailable) { "Qualcomm HTP NPU delegate is unavailable" }
             val interpreterOptions = Interpreter.Options().apply {
                 // XNNPACK executes the planned FP32 portion efficiently after
                 // QNN has claimed the verified HTP convolution partitions.
                 setUseXNNPACK(true)
-                setNumThreads(4)
+                setNumThreads(CPU_THREADS)
                 addDelegate(delegate)
             }
-            val interpreter = Interpreter(model, interpreterOptions)
-            val session = QnnSession(interpreter, delegate, model)
+            interpreter = Interpreter(model, interpreterOptions)
+            val session = QnnSession(interpreter, delegate, model, Backend.QUALCOMM_HTP)
             session.verifyContract()
             return session
         } catch (error: Throwable) {
-            delegate.close()
+            runCatching { interpreter?.close() }
+            runCatching { delegate?.close() }
             throw error
         }
     }
 
-    /** Compiles the graph through QNN and validates its exact tensor ABI. */
-    fun verifyRuntime() = openSession().use { Unit }
-
-    private fun requireHtpFp16() {
-        check(NativeDemucsBridge.supportsCurrentAbi()) { "Native DSP ABI does not match the six-stem model" }
-        check(isInstalled()) { "分轨模型尚未下载或版本不匹配" }
-        check(QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)) {
-            "This device does not expose the Qualcomm HTP FP16 NPU runtime"
+    private fun openCpuSession(model: MappedByteBuffer): QnnSession {
+        val interpreterOptions = Interpreter.Options().apply {
+            // The shipped model has FP32 tensors throughout. XNNPACK keeps the
+            // fallback portable while still using optimized Arm CPU kernels.
+            setUseXNNPACK(true)
+            setNumThreads(CPU_THREADS)
+        }
+        var interpreter: Interpreter? = null
+        try {
+            interpreter = Interpreter(model, interpreterOptions)
+            val session = QnnSession(interpreter, null, model, Backend.CPU)
+            session.verifyContract()
+            return session
+        } catch (error: Throwable) {
+            runCatching { interpreter?.close() }
+            throw error
         }
     }
+
+    /** Opens the selected backend and validates the model's exact tensor ABI. */
+    fun verifyRuntime() = openSession().use { Unit }
+
+    private fun requireCommonRuntime() {
+        check(NativeDemucsBridge.supportsCurrentAbi()) { "Native DSP ABI does not match the six-stem model" }
+        check(isInstalled()) { "分轨模型尚未下载或版本不匹配" }
+    }
+
+    private fun supportsHtpFp16(): Boolean = runCatching {
+        QnnDelegate.checkCapability(QnnDelegate.Capability.HTP_RUNTIME_FP16)
+    }.onFailure { error ->
+        Log.i(TAG, "Qualcomm HTP FP16 is unavailable; CPU fallback will be used", error)
+    }.getOrDefault(false)
 
     private fun qnnCacheDirectory(): File = File(context.codeCacheDir, "qnn-htp")
 
@@ -138,8 +195,9 @@ class ModelRuntime(private val context: Context) {
 
     class QnnSession internal constructor(
         private val interpreter: Interpreter,
-        private val delegate: QnnDelegate,
-        @Suppress("unused") private val mappedModel: MappedByteBuffer
+        private val delegate: QnnDelegate?,
+        @Suppress("unused") private val mappedModel: MappedByteBuffer,
+        val backend: Backend,
     ) : Closeable {
         internal fun verifyContract() {
             check(interpreter.inputTensorCount == 2) { "Unexpected LiteRT input count" }
@@ -151,21 +209,26 @@ class ModelRuntime(private val context: Context) {
         }
 
         fun run(inputs: Array<Any>, outputs: MutableMap<Int, Any>) {
-            delegate.performanceVote()
-            try {
+            val activeDelegate = delegate
+            if (activeDelegate == null) {
                 interpreter.runForMultipleInputsOutputs(inputs, outputs)
-            } finally {
-                delegate.performanceRelease()
+            } else {
+                activeDelegate.performanceVote()
+                try {
+                    interpreter.runForMultipleInputsOutputs(inputs, outputs)
+                } finally {
+                    activeDelegate.performanceRelease()
+                }
             }
         }
 
         fun lastInferenceNanos(): Long? = interpreter.lastNativeInferenceDurationNanoseconds
 
-        fun profilingResult(): ByteArray = delegate.profilingResult
+        fun profilingResult(): ByteArray = delegate?.profilingResult ?: byteArrayOf()
 
         override fun close() {
             interpreter.close()
-            delegate.close()
+            delegate?.close()
         }
     }
 }

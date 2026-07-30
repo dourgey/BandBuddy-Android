@@ -5,7 +5,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
-/** Runs one original 7.8 second HTDemucs window through native DSP → QNN HTP → native DSP. */
+/** Runs one original 7.8 second HTDemucs window through native DSP, LiteRT, and native DSP. */
 class DemucsWindowSeparator(modelRuntime: ModelRuntime) : Closeable {
     companion object {
         const val SAMPLES = 343_980
@@ -28,6 +28,9 @@ class DemucsWindowSeparator(modelRuntime: ModelRuntime) : Closeable {
     private var preprocessNanos = 0L
     private var neuralCoreWallNanos = 0L
     private var postprocessNanos = 0L
+
+    val backend: ModelRuntime.Backend
+        get() = session.backend
 
     /** Input and output are planar: channel/source first, then samples. */
     fun separate(stereoPlanar: FloatArray): FloatArray =
