@@ -750,6 +750,25 @@ class DemucsInferenceInstrumentedTest {
     }
 
     @Test
+    fun productionRuntimeOpensWithAnAvailableBackend() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val runtime = ModelRuntime(context)
+        val preferred = runtime.preferredBackend()
+
+        runtime.openSession().use { session ->
+            if (preferred == ModelRuntime.Backend.CPU) {
+                assertEquals(ModelRuntime.Backend.CPU, session.backend)
+            } else {
+                assertTrue(
+                    "HTP may initialize or safely fall back to CPU",
+                    session.backend == ModelRuntime.Backend.QUALCOMM_HTP ||
+                        session.backend == ModelRuntime.Backend.CPU,
+                )
+            }
+        }
+    }
+
+    @Test
     fun zeroWindowRunsThroughNativeDspAndQnnHtpCore() {
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         val input = FloatArray(2 * DemucsWindowSeparator.SAMPLES)

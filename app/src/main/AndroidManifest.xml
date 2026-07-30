@@ -17,11 +17,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BandBuddy">
         <!-- Qualcomm HTP communicates with the Hexagon NPU through the
-             device's public FastRPC client. Apps targeting Android 12+
-             must name non-NDK public native libraries explicitly. -->
+             device's public FastRPC client. It is optional because devices
+             without FastRPC use the portable FP32 CPU fallback. -->
         <uses-native-library
             android:name="libcdsprpc.so"
-            android:required="true" />
+            android:required="false" />
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"

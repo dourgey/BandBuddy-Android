@@ -438,7 +438,7 @@ setSkipNodeIds(CPU_NODE_IDS)
 
 其余节点由 XNNPACK FP32、4 线程执行。
 
-### 8.3 NPU 是强制条件，不会静默回退
+### 8.3 NPU 优先，缺失时回退到 CPU FP32
 
 正式代码会检查：
 
@@ -448,7 +448,21 @@ setSkipNodeIds(CPU_NODE_IDS)
 - QNN delegate 是否可用；
 - 输入输出 tensor 形状是否与固定 ABI 一致。
 
-任一条件失败，分轨都会停止并显示原因。代码不会静默切换为 CPU-only 后继续显示“NPU 加速”。
+JNI DSP ABI、模型文件和 tensor ABI 仍是强制条件。HTP FP16 capability
+缺失时，代码不会创建 QNN delegate，而是直接用 LiteRT/XNNPACK 的 4 线程
+FP32 CPU 路径执行完整图；如果 capability 存在但 QNN/FastRPC 在初始化阶段
+失败，也会记录原始错误并自动回退 CPU。设置页和分轨进度会明确显示
+“CPU FP32 兼容模式”，不会把 CPU-only 执行标成 NPU 加速。
+
+`libcdsprpc.so` 在 Android manifest 中因此声明为可选。没有 FastRPC 的设备
+仍可安装应用，只是不会进入 HTP 路径。
+
+CPU 回退已在一台不暴露 `HTP_RUNTIME_FP16` 的 SM8250、Android 13、
+6 GB RAM 平板上做过实机门禁。LiteRT 创建 XNNPACK CPU delegate 后接管
+3,504 个节点中的 3,156 个，其余节点由内置 CPU kernel 执行；连续两个
+7.8 秒零输入窗口分别耗时约 10.3 秒和 9.3 秒，tensor ABI、完整推理和
+有限值检查均通过。该结果只证明回退链路可执行，其他设备仍需单独测量
+真实歌曲的耗时和内存峰值。
 
 ### 8.4 编译缓存
 
@@ -1196,11 +1210,11 @@ QnnGraph_execute done. status 0x0
 
 当前版本的已知边界如下：
 
-1. **硬件特定**  
-   当前生产分区只在 SM8650 实机上完成系统评测。其他 Snapdragon 应重新搜索分区并复测；非 HTP 设备当前不会静默 CPU 回退。
+1. **NPU 分区仍有硬件特定性**
+   当前生产 NPU 分区只在 SM8650 实机上完成系统评测。其他 Snapdragon 如果 QNN 初始化失败会自动回退 CPU；非 HTP 设备直接使用完整 FP32 CPU 图。CPU 路径的速度和内存占用仍需按设备实测。
 
-2. **分轨速度低于实时**  
-   7.8 秒上下文保留了接近原模型的质量，纯窗口推理成本约为音频时长的 1.4 倍。
+2. **分轨速度低于实时**
+   7.8 秒上下文保留了接近原模型的质量。已验证的混合 NPU 路径中，纯窗口推理成本约为音频时长的 1.4 倍；CPU 回退速度随 SoC、散热和可用内存变化，不能沿用该数字。
 
 3. **标准桌面配置并非逐样本相同**  
    桌面默认 shift ensemble 与应用的固定 no-shift 流程存在可测差异。

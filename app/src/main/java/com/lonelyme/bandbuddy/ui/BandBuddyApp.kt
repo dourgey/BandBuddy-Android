@@ -23,10 +23,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,8 +38,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -122,8 +129,11 @@ import java.io.File
 import kotlin.math.log10
 import kotlin.math.roundToInt
 
-private enum class AppScreen { LIBRARY, PRACTICE, SETTINGS }
+internal enum class AppScreen { LIBRARY, PRACTICE, SETTINGS }
 private enum class LibraryFilter(val label: String) { ALL("全部"), READY("可练习"), ACTIVE("处理中"), FAILED("失败"), FAVORITE("收藏") }
+private val TabletBreakpoint = 600.dp
+private val WidePracticeBreakpoint = 680.dp
+private val TabletRailWidth = 92.dp
 
 @Composable
 fun BandBuddyApp(openSongId: String? = null, onOpenSongConsumed: () -> Unit = {}) {
@@ -239,94 +249,120 @@ fun BandBuddyApp(openSongId: String? = null, onOpenSongConsumed: () -> Unit = {}
 
     val selected = songs.firstOrNull { it.id == selectedId }
     Surface(Modifier.fillMaxSize(), color = Paper) {
-        Box(Modifier.fillMaxSize()) {
-            when (screen) {
-                AppScreen.LIBRARY -> LibraryScreen(
-                    songs = songs,
-                    onImport = { showImport = true },
-                    onOpen = { song ->
-                        if (song.status == SongStatus.READY) { selectedId = song.id; screen = AppScreen.PRACTICE }
-                        else message = song.error ?: song.jobStage
-                    },
-                    onFavorite = { replaceSong(it.copy(favorite = !it.favorite)) },
-                    onEdit = { editingSong = it },
-                    onDelete = { song ->
-                        SeparationWorker.cancel(context, song.id)
-                        PlaybackService.stopIfCurrent(context, song.id)
-                        scope.launch(Dispatchers.IO) { repository.delete(song) }
-                        songs = songs.filterNot { it.id == song.id }
-                    },
-                    onRetry = { song ->
-                        replaceSong(
-                            song.copy(
-                                status = SongStatus.QUEUED,
-                                jobStage = "等待本地分轨",
-                                progress = 0,
-                                error = null,
-                                processingStartedAt = null
-                            )
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val isTablet = maxWidth >= TabletBreakpoint
+            Box(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxSize()) {
+                    if (isTablet) {
+                        TabletNavigationRail(
+                            selected = screen,
+                            onLibrary = { screen = AppScreen.LIBRARY },
+                            onPractice = ::openLastPractice,
+                            onSettings = { screen = AppScreen.SETTINGS },
                         )
-                        if (modelState.isReady) {
-                            SeparationWorker.enqueue(context, song.id, replace = true)
-                        } else {
-                            screen = AppScreen.SETTINGS
-                            message = "请先在设置中下载分轨模型"
-                        }
-                    },
-                    onCancel = { song ->
-                        SeparationWorker.cancel(context, song.id)
-                        replaceSong(
-                            song.copy(
-                                status = SongStatus.FAILED,
-                                jobStage = "已取消",
-                                error = "任务已取消",
-                                processingStartedAt = null
+                    }
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        when (screen) {
+                            AppScreen.LIBRARY -> LibraryScreen(
+                                songs = songs,
+                                isTablet = isTablet,
+                                onImport = { showImport = true },
+                                onOpen = { song ->
+                                    if (song.status == SongStatus.READY) { selectedId = song.id; screen = AppScreen.PRACTICE }
+                                    else message = song.error ?: song.jobStage
+                                },
+                                onFavorite = { replaceSong(it.copy(favorite = !it.favorite)) },
+                                onEdit = { editingSong = it },
+                                onDelete = { song ->
+                                    SeparationWorker.cancel(context, song.id)
+                                    PlaybackService.stopIfCurrent(context, song.id)
+                                    scope.launch(Dispatchers.IO) { repository.delete(song) }
+                                    songs = songs.filterNot { it.id == song.id }
+                                },
+                                onRetry = { song ->
+                                    replaceSong(
+                                        song.copy(
+                                            status = SongStatus.QUEUED,
+                                            jobStage = "等待本地分轨",
+                                            progress = 0,
+                                            error = null,
+                                            processingStartedAt = null
+                                        )
+                                    )
+                                    if (modelState.isReady) {
+                                        SeparationWorker.enqueue(context, song.id, replace = true)
+                                    } else {
+                                        screen = AppScreen.SETTINGS
+                                        message = "请先在设置中下载分轨模型"
+                                    }
+                                },
+                                onCancel = { song ->
+                                    SeparationWorker.cancel(context, song.id)
+                                    replaceSong(
+                                        song.copy(
+                                            status = SongStatus.FAILED,
+                                            jobStage = "已取消",
+                                            error = "任务已取消",
+                                            processingStartedAt = null
+                                        )
+                                    )
+                                },
+                                onSettings = { screen = AppScreen.SETTINGS },
+                                onPractice = ::openLastPractice
                             )
-                        )
-                    },
-                    onSettings = { screen = AppScreen.SETTINGS },
-                    onPractice = ::openLastPractice
-                )
-                AppScreen.PRACTICE -> if (selected != null) PracticeScreen(
-                    song = selected,
-                    onBack = { screen = AppScreen.LIBRARY },
-                    onUpdate = ::replaceSong,
-                    onLibrary = { screen = AppScreen.LIBRARY }
-                ) else screen.also { screen = AppScreen.LIBRARY }
-                AppScreen.SETTINGS -> SettingsScreen(
-                    model = modelState,
-                    runtimeStatus = runtimeStatus,
-                    songs = songs,
-                    onBack = { screen = AppScreen.LIBRARY },
-                    onDownloadModel = {
-                        ModelDownloadWorker.enqueue(context)
-                        modelState = modelStore.snapshot()
-                        message = "已开始下载分轨模型"
-                    },
-                    onPauseModel = {
-                        ModelDownloadWorker.pause(context)
-                        modelState = modelStore.snapshot()
-                        message = "模型下载已暂停，可稍后继续"
-                    },
-                    onDeleteModel = {
-                        scope.launch {
-                            val removed = withContext(Dispatchers.IO) {
-                                ModelDownloadWorker.delete(context)
-                            }
-                            modelState = modelStore.snapshot()
-                            runtimeStatus = null
-                            message = "已删除分轨模型，释放 ${formatBytes(removed)}"
-                        }
-                    },
-                    onCleanup = {
-                        scope.launch {
-                            val removed = withContext(Dispatchers.IO) { repository.cleanupOrphans() }
-                            message = if (removed > 0) "已清理 ${formatBytes(removed)} 临时文件" else "没有需要清理的临时文件"
+                            AppScreen.PRACTICE -> if (selected != null) PracticeScreen(
+                                song = selected,
+                                isTablet = isTablet,
+                                onBack = { screen = AppScreen.LIBRARY },
+                                onUpdate = ::replaceSong,
+                                onLibrary = { screen = AppScreen.LIBRARY }
+                            ) else screen.also { screen = AppScreen.LIBRARY }
+                            AppScreen.SETTINGS -> SettingsScreen(
+                                model = modelState,
+                                runtimeStatus = runtimeStatus,
+                                songs = songs,
+                                isTablet = isTablet,
+                                onBack = { screen = AppScreen.LIBRARY },
+                                onDownloadModel = {
+                                    ModelDownloadWorker.enqueue(context)
+                                    modelState = modelStore.snapshot()
+                                    message = "已开始下载分轨模型"
+                                },
+                                onPauseModel = {
+                                    ModelDownloadWorker.pause(context)
+                                    modelState = modelStore.snapshot()
+                                    message = "模型下载已暂停，可稍后继续"
+                                },
+                                onDeleteModel = {
+                                    scope.launch {
+                                        val removed = withContext(Dispatchers.IO) {
+                                            ModelDownloadWorker.delete(context)
+                                        }
+                                        modelState = modelStore.snapshot()
+                                        runtimeStatus = null
+                                        message = "已删除分轨模型，释放 ${formatBytes(removed)}"
+                                    }
+                                },
+                                onCleanup = {
+                                    scope.launch {
+                                        val removed = withContext(Dispatchers.IO) { repository.cleanupOrphans() }
+                                        message = if (removed > 0) "已清理 ${formatBytes(removed)} 临时文件" else "没有需要清理的临时文件"
+                                    }
+                                }
+                            )
                         }
                     }
-                )
+                }
+                message?.let {
+                    ToastBanner(
+                        text = it,
+                        isTablet = isTablet,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(start = if (isTablet) TabletRailWidth else 0.dp),
+                    )
+                }
             }
-            message?.let { ToastBanner(it, Modifier.align(Alignment.BottomCenter)) }
         }
     }
 
@@ -404,8 +440,9 @@ fun BandBuddyApp(openSongId: String? = null, onOpenSongConsumed: () -> Unit = {}
 }
 
 @Composable
-private fun LibraryScreen(
+internal fun LibraryScreen(
     songs: List<SongRecord>,
+    isTablet: Boolean,
     onImport: () -> Unit,
     onOpen: (SongRecord) -> Unit,
     onFavorite: (SongRecord) -> Unit,
@@ -428,44 +465,113 @@ private fun LibraryScreen(
             LibraryFilter.FAVORITE -> song.favorite
         }
     }
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        LazyColumn(
-            Modifier.weight(1f),
-            contentPadding = PaddingValues(horizontal = 26.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+    if (isTablet) {
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = 300.dp),
+            modifier = Modifier.fillMaxSize().statusBarsPadding(),
+            contentPadding = PaddingValues(horizontal = 32.dp, vertical = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                BrandRow(onSettings)
-                Spacer(Modifier.height(18.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "曲库",
+                                fontFamily = FontFamily.Serif,
+                                fontSize = 36.sp,
+                                lineHeight = 40.sp,
+                                fontWeight = FontWeight.Black,
+                            )
+                            Text(
+                                "整理歌曲、分轨与下一次排练",
+                                color = MutedInk,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(top = 5.dp),
+                            )
+                        }
+                        Button(
+                            onClick = onImport,
+                            modifier = Modifier.height(48.dp),
+                            shape = RoundedCornerShape(15.dp),
+                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Ink),
+                        ) {
+                            Text("＋  导入歌曲", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Spacer(Modifier.height(26.dp))
                     OutlinedTextField(
                         value = query, onValueChange = { query = it }, singleLine = true,
                         placeholder = { Text("搜索歌曲、艺人或拼音", fontSize = 13.sp) },
                         leadingIcon = { Text("⌕", fontSize = 22.sp, color = MutedInk) },
                         shape = RoundedCornerShape(18.dp),
-                        modifier = Modifier.weight(1f).heightIn(min = 56.dp)
+                        modifier = Modifier.widthIn(max = 680.dp).fillMaxWidth().heightIn(min = 56.dp),
                     )
-                    Spacer(Modifier.width(10.dp))
-                    Button(
-                        onClick = onImport, modifier = Modifier.height(48.dp), shape = RoundedCornerShape(15.dp),
-                        contentPadding = PaddingValues(horizontal = 15.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)
-                    ) { Text("＋  导入", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        LibraryFilter.entries.forEach { item ->
+                            MiniButton(item.label, filter == item) { filter = item }
+                        }
+                    }
+                    Spacer(Modifier.height(34.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("我的歌曲", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        Text("${filtered.size} 首", fontSize = 12.sp, color = MutedInk)
+                    }
                 }
-                Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    LibraryFilter.entries.forEach { item -> MiniButton(item.label, filter == item) { filter = item } }
-                }
-                Spacer(Modifier.height(38.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("我的歌曲", fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.weight(1f)); Text("${filtered.size} 首", fontSize = 12.sp, color = MutedInk)
-                }
-                Spacer(Modifier.height(13.dp))
             }
-            if (filtered.isEmpty()) item { EmptyLibrary(hasQuery = query.isNotBlank(), onImport = onImport) }
-            items(filtered, key = SongRecord::id) { song -> SongCard(song, onOpen, onFavorite, onEdit, onDelete, onRetry, onCancel) }
+            if (filtered.isEmpty()) {
+                item(span = { GridItemSpan(maxLineSpan) }) {
+                    EmptyLibrary(hasQuery = query.isNotBlank(), onImport = onImport)
+                }
+            }
+            gridItems(filtered, key = SongRecord::id) { song ->
+                SongCard(song, onOpen, onFavorite, onEdit, onDelete, onRetry, onCancel)
+            }
         }
-        BottomBar(AppScreen.LIBRARY, onLibrary = {}, onPractice = onPractice)
+    } else {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            LazyColumn(
+                Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 26.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item {
+                    BrandRow(onSettings)
+                    Spacer(Modifier.height(18.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = query, onValueChange = { query = it }, singleLine = true,
+                            placeholder = { Text("搜索歌曲、艺人或拼音", fontSize = 13.sp) },
+                            leadingIcon = { Text("⌕", fontSize = 22.sp, color = MutedInk) },
+                            shape = RoundedCornerShape(18.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 56.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Button(
+                            onClick = onImport, modifier = Modifier.height(48.dp), shape = RoundedCornerShape(15.dp),
+                            contentPadding = PaddingValues(horizontal = 15.dp), colors = ButtonDefaults.buttonColors(containerColor = Ink)
+                        ) { Text("＋  导入", fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        LibraryFilter.entries.forEach { item -> MiniButton(item.label, filter == item) { filter = item } }
+                    }
+                    Spacer(Modifier.height(38.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("我的歌曲", fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f)); Text("${filtered.size} 首", fontSize = 12.sp, color = MutedInk)
+                    }
+                    Spacer(Modifier.height(13.dp))
+                }
+                if (filtered.isEmpty()) item { EmptyLibrary(hasQuery = query.isNotBlank(), onImport = onImport) }
+                items(filtered, key = SongRecord::id) { song -> SongCard(song, onOpen, onFavorite, onEdit, onDelete, onRetry, onCancel) }
+            }
+            BottomBar(AppScreen.LIBRARY, onLibrary = {}, onPractice = onPractice)
+        }
     }
 }
 
@@ -560,6 +666,7 @@ private fun StatusPill(song: SongRecord) {
 @Composable
 private fun PracticeScreen(
     song: SongRecord,
+    isTablet: Boolean,
     onBack: () -> Unit,
     onUpdate: (SongRecord) -> Unit,
     onLibrary: () -> Unit
@@ -722,66 +829,285 @@ private fun PracticeScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        LazyColumn(
-            Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp)
-        ) {
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("‹", fontSize = 35.sp, modifier = Modifier.clickable(onClick = onBack).padding(end = 8.dp))
-                    Spacer(Modifier.weight(1f)); Text(
-                        if (song.favorite) "♥" else "♡",
-                        color = if (song.favorite) Color(0xFF9F503F) else MutedInk,
-                        fontSize = 18.sp,
-                        modifier = Modifier.clickable { onUpdate(song.copy(favorite = !song.favorite)) }.padding(6.dp)
-                    )
-                }
-                Spacer(Modifier.height(16.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(song.title, fontFamily = FontFamily.Serif, fontSize = 30.sp, lineHeight = 33.sp, fontWeight = FontWeight.Black, maxLines = 2)
-                        Text(song.artist, color = MutedInk, fontSize = 15.sp, modifier = Modifier.padding(top = 5.dp))
-                        LyricsMarquee(lyrics, position, Modifier.padding(top = 13.dp))
+    val playbackDuration = engine?.durationMs?.takeIf { it > 0 } ?: song.durationMs
+    val onSeek: (Long) -> Unit = { target ->
+        position = target
+        engine?.seekTo(target)
+    }
+    val onPlay: () -> Unit = {
+        engine?.let { if (it.isPlayingOrCountingIn) it.pause() else it.play() }
+    }
+    val onSkipBack: () -> Unit = {
+        engine?.seekTo((position - 5000).coerceAtLeast(0))
+    }
+    val onSkipForward: () -> Unit = {
+        engine?.seekTo((position + 5000).coerceAtMost(engine?.durationMs ?: song.durationMs))
+    }
+
+    if (isTablet) {
+        BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
+            val useTwoPane = maxWidth >= WidePracticeBreakpoint
+            Column(Modifier.fillMaxSize()) {
+                if (useTwoPane) {
+                    Row(
+                        modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 28.dp, vertical = 20.dp),
+                        horizontalArrangement = Arrangement.spacedBy(26.dp),
+                    ) {
+                        LazyColumn(
+                            modifier = Modifier.weight(.9f).fillMaxHeight(),
+                            contentPadding = PaddingValues(bottom = 20.dp),
+                        ) {
+                            item {
+                                PracticeHero(
+                                    song = song,
+                                    lyrics = lyrics,
+                                    position = position,
+                                    duration = playbackDuration,
+                                    waveform = waveform,
+                                    playing = playing,
+                                    loadError = loadError,
+                                    showBack = false,
+                                    expanded = true,
+                                    onBack = onBack,
+                                    onFavorite = { onUpdate(song.copy(favorite = !song.favorite)) },
+                                    onSeek = onSeek,
+                                )
+                            }
+                        }
+                        LazyColumn(
+                            modifier = Modifier.weight(1.1f).fillMaxHeight(),
+                            contentPadding = PaddingValues(bottom = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            item { MixerHeading(expanded = true) }
+                            items(StemType.entries) { type ->
+                                TrackRow(type, practice.tracks[type] ?: TrackState()) { state ->
+                                    update(practice.withTrackState(type, state))
+                                }
+                            }
+                            item {
+                                Spacer(Modifier.height(8.dp))
+                                LoopAndSpeed(
+                                    practice = practice,
+                                    position = position,
+                                    beatAnalysisRunning = beatAnalysisRunning,
+                                    isSongPlaying = songPlaying,
+                                    onDetectBeatGrid = ::requestBeatAnalysis,
+                                    onPreviewMetronome = { engine?.previewMetronome() },
+                                    readPlaybackPosition = {
+                                        engine?.takeIf(PlaybackService::isPlaying)?.positionMs
+                                    },
+                                    onChange = ::update,
+                                )
+                            }
+                        }
                     }
-                    AnimatedRecordArt(song.title.take(1), Modifier.size(112.dp), accentFor(song.id), playing)
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 30.dp, vertical = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        item {
+                            PracticeHero(
+                                song = song,
+                                lyrics = lyrics,
+                                position = position,
+                                duration = playbackDuration,
+                                waveform = waveform,
+                                playing = playing,
+                                loadError = loadError,
+                                showBack = false,
+                                expanded = false,
+                                onBack = onBack,
+                                onFavorite = { onUpdate(song.copy(favorite = !song.favorite)) },
+                                onSeek = onSeek,
+                            )
+                            Spacer(Modifier.height(20.dp))
+                            MixerHeading(expanded = true)
+                        }
+                        items(StemType.entries) { type ->
+                            TrackRow(type, practice.tracks[type] ?: TrackState()) { state ->
+                                update(practice.withTrackState(type, state))
+                            }
+                        }
+                        item {
+                            Spacer(Modifier.height(10.dp))
+                            LoopAndSpeed(
+                                practice = practice,
+                                position = position,
+                                beatAnalysisRunning = beatAnalysisRunning,
+                                isSongPlaying = songPlaying,
+                                onDetectBeatGrid = ::requestBeatAnalysis,
+                                onPreviewMetronome = { engine?.previewMetronome() },
+                                readPlaybackPosition = {
+                                    engine?.takeIf(PlaybackService::isPlaying)?.positionMs
+                                },
+                                onChange = ::update,
+                            )
+                            Spacer(Modifier.height(12.dp))
+                        }
+                    }
                 }
-                Spacer(Modifier.height(28.dp))
-                RealTimeline(position, engine?.durationMs?.takeIf { it > 0 } ?: song.durationMs, waveform) { target -> position = target; engine?.seekTo(target) }
-                loadError?.let { Text(it, color = Color(0xFF9F3E36), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
-                Spacer(Modifier.height(19.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("混音器", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                    Spacer(Modifier.weight(1f)); Text("M 静音 · S 独奏", fontSize = 10.sp, color = MutedInk)
-                }
-                Spacer(Modifier.height(5.dp))
-            }
-            items(StemType.entries) { type ->
-                TrackRow(type, practice.tracks[type] ?: TrackState()) { state -> update(practice.withTrackState(type, state)) }
-            }
-            item {
-                Spacer(Modifier.height(12.dp))
-                LoopAndSpeed(
-                    practice = practice,
+                TransportBar(
+                    song = song,
+                    loaded = loaded,
+                    playing = playing,
                     position = position,
-                    beatAnalysisRunning = beatAnalysisRunning,
-                    isSongPlaying = songPlaying,
-                    onDetectBeatGrid = ::requestBeatAnalysis,
-                    onPreviewMetronome = { engine?.previewMetronome() },
-                    readPlaybackPosition = {
-                        engine?.takeIf(PlaybackService::isPlaying)?.positionMs
-                    },
-                    onChange = ::update
+                    countInRemaining = countInRemaining,
+                    expanded = true,
+                    onPlay = onPlay,
+                    onBack = onSkipBack,
+                    onForward = onSkipForward,
                 )
-                Spacer(Modifier.height(12.dp))
             }
         }
-        TransportBar(song, loaded, playing, position, countInRemaining,
-            onPlay = { engine?.let { if (it.isPlayingOrCountingIn) it.pause() else it.play() } },
-            onBack = { engine?.seekTo((position - 5000).coerceAtLeast(0)) },
-            onForward = { engine?.seekTo((position + 5000).coerceAtMost(engine?.durationMs ?: song.durationMs)) }
+    } else {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            LazyColumn(
+                Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                item {
+                    PracticeHero(
+                        song = song,
+                        lyrics = lyrics,
+                        position = position,
+                        duration = playbackDuration,
+                        waveform = waveform,
+                        playing = playing,
+                        loadError = loadError,
+                        showBack = true,
+                        expanded = false,
+                        onBack = onBack,
+                        onFavorite = { onUpdate(song.copy(favorite = !song.favorite)) },
+                        onSeek = onSeek,
+                    )
+                    Spacer(Modifier.height(19.dp))
+                    MixerHeading(expanded = false)
+                    Spacer(Modifier.height(5.dp))
+                }
+                items(StemType.entries) { type ->
+                    TrackRow(type, practice.tracks[type] ?: TrackState()) { state ->
+                        update(practice.withTrackState(type, state))
+                    }
+                }
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    LoopAndSpeed(
+                        practice = practice,
+                        position = position,
+                        beatAnalysisRunning = beatAnalysisRunning,
+                        isSongPlaying = songPlaying,
+                        onDetectBeatGrid = ::requestBeatAnalysis,
+                        onPreviewMetronome = { engine?.previewMetronome() },
+                        readPlaybackPosition = {
+                            engine?.takeIf(PlaybackService::isPlaying)?.positionMs
+                        },
+                        onChange = ::update,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+            TransportBar(
+                song = song,
+                loaded = loaded,
+                playing = playing,
+                position = position,
+                countInRemaining = countInRemaining,
+                expanded = false,
+                onPlay = onPlay,
+                onBack = onSkipBack,
+                onForward = onSkipForward,
+            )
+            BottomBar(AppScreen.PRACTICE, onLibrary = onLibrary, onPractice = {})
+        }
+    }
+}
+
+@Composable
+private fun PracticeHero(
+    song: SongRecord,
+    lyrics: List<LyricLine>,
+    position: Long,
+    duration: Long,
+    waveform: FloatArray,
+    playing: Boolean,
+    loadError: String?,
+    showBack: Boolean,
+    expanded: Boolean,
+    onBack: () -> Unit,
+    onFavorite: () -> Unit,
+    onSeek: (Long) -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        if (showBack) {
+            Text("‹", fontSize = 35.sp, modifier = Modifier.clickable(onClick = onBack).padding(end = 8.dp))
+        } else {
+            Text("练习室", color = MutedInk, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.weight(1f))
+        Text(
+            if (song.favorite) "♥" else "♡",
+            color = if (song.favorite) Color(0xFF9F503F) else MutedInk,
+            fontSize = 18.sp,
+            modifier = Modifier.clickable(onClick = onFavorite).padding(6.dp),
         )
-        BottomBar(AppScreen.PRACTICE, onLibrary = onLibrary, onPractice = {})
+    }
+    Spacer(Modifier.height(if (expanded) 18.dp else 16.dp))
+    if (expanded) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            AnimatedRecordArt(song.title.take(1), Modifier.size(148.dp), accentFor(song.id), playing)
+            Text(
+                song.title,
+                fontFamily = FontFamily.Serif,
+                fontSize = 34.sp,
+                lineHeight = 37.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 18.dp),
+            )
+            Text(song.artist, color = MutedInk, fontSize = 15.sp, modifier = Modifier.padding(top = 5.dp))
+            LyricsMarquee(lyrics, position, Modifier.padding(top = 13.dp))
+        }
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    song.title,
+                    fontFamily = FontFamily.Serif,
+                    fontSize = 30.sp,
+                    lineHeight = 33.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(song.artist, color = MutedInk, fontSize = 15.sp, modifier = Modifier.padding(top = 5.dp))
+                LyricsMarquee(lyrics, position, Modifier.padding(top = 13.dp))
+            }
+            AnimatedRecordArt(song.title.take(1), Modifier.size(112.dp), accentFor(song.id), playing)
+        }
+    }
+    Spacer(Modifier.height(if (expanded) 32.dp else 28.dp))
+    RealTimeline(position, duration, waveform, onSeek)
+    loadError?.let {
+        Text(it, color = Color(0xFF9F3E36), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+    }
+}
+
+@Composable
+private fun MixerHeading(expanded: Boolean) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column {
+            Text("混音器", fontWeight = FontWeight.Bold, fontSize = if (expanded) 20.sp else 17.sp)
+            if (expanded) {
+                Text("逐轨调整你的排练声场", color = MutedInk, fontSize = 10.sp, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Text("M 静音 · S 独奏", fontSize = 10.sp, color = MutedInk)
     }
 }
 
@@ -1109,13 +1435,21 @@ private fun TransportBar(
     playing: Boolean,
     position: Long,
     countInRemaining: Int,
+    expanded: Boolean,
     onPlay: () -> Unit,
     onBack: () -> Unit,
     onForward: () -> Unit
 ) {
-    Row(Modifier.fillMaxWidth().background(Ink).padding(horizontal = 20.dp, vertical = 11.dp), verticalAlignment = Alignment.CenterVertically) {
-        RecordArt(song.title.take(1), Modifier.size(36.dp), accentFor(song.id)); Spacer(Modifier.width(9.dp))
-        Column(Modifier.weight(1f)) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Ink)
+            .padding(horizontal = if (expanded) 32.dp else 20.dp, vertical = if (expanded) 13.dp else 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RecordArt(song.title.take(1), Modifier.size(if (expanded) 42.dp else 36.dp), accentFor(song.id))
+        Spacer(Modifier.width(if (expanded) 12.dp else 9.dp))
+        Column(Modifier.weight(1f).widthIn(max = 360.dp)) {
             Text(song.title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             Text(
                 if (countInRemaining > 0) "预备拍 · $countInRemaining" else formatDuration(position),
@@ -1123,9 +1457,24 @@ private fun TransportBar(
                 fontSize = 9.sp
             )
         }
-        Text("−5", color = Color.White, fontSize = 11.sp, modifier = Modifier.clickable(onClick = onBack).padding(8.dp))
-        Box(Modifier.size(42.dp).clip(CircleShape).background(Paper).clickable(enabled = loaded, onClick = onPlay), contentAlignment = Alignment.Center) { Text(if (playing) "Ⅱ" else "▶", color = Ink, fontSize = 16.sp) }
-        Text("+5", color = Color.White, fontSize = 11.sp, modifier = Modifier.clickable(onClick = onForward).padding(8.dp))
+        if (expanded) {
+            Text("后退 5 秒", color = Color(0xFFDDD5CC), fontSize = 10.sp)
+        }
+        Text("−5", color = Color.White, fontSize = 11.sp, modifier = Modifier.clickable(onClick = onBack).padding(10.dp))
+        Box(
+            Modifier
+                .size(if (expanded) 46.dp else 42.dp)
+                .clip(CircleShape)
+                .background(Paper)
+                .clickable(enabled = loaded, onClick = onPlay),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(if (playing) "Ⅱ" else "▶", color = Ink, fontSize = 16.sp)
+        }
+        Text("+5", color = Color.White, fontSize = 11.sp, modifier = Modifier.clickable(onClick = onForward).padding(10.dp))
+        if (expanded) {
+            Text("前进 5 秒", color = Color(0xFFDDD5CC), fontSize = 10.sp)
+        }
     }
 }
 
@@ -1134,6 +1483,7 @@ private fun SettingsScreen(
     model: ModelInstallSnapshot,
     runtimeStatus: String?,
     songs: List<SongRecord>,
+    isTablet: Boolean,
     onBack: () -> Unit,
     onDownloadModel: () -> Unit,
     onPauseModel: () -> Unit,
@@ -1150,45 +1500,165 @@ private fun SettingsScreen(
             song.stems.sumOf { File(it.path).length() }
     }
     val separationRunning = songs.any { it.status == SongStatus.PROCESSING }
-    LazyColumn(
-        Modifier.fillMaxSize().statusBarsPadding(),
-        contentPadding = PaddingValues(horizontal = 27.dp, vertical = 16.dp),
-    ) {
-        item {
-            Text("‹", fontSize = 35.sp, modifier = Modifier.clickable(onClick = onBack))
-            Spacer(Modifier.height(28.dp))
-            Text("设置", fontFamily = FontFamily.Serif, fontSize = 35.sp, fontWeight = FontWeight.Black)
-            Spacer(Modifier.height(28.dp))
-            ModelManagementCard(
-                model = model,
-                runtimeStatus = runtimeStatus,
-                canDelete = !separationRunning,
-                onDownload = onDownloadModel,
-                onPause = onPauseModel,
-                onDelete = { confirmModelDelete = true },
-            )
-            Spacer(Modifier.height(16.dp))
-            SettingRow("本地曲库", "${songs.size} 首 · ${formatBytes(storageBytes)}")
-            SettingRow("隐私", "仅联网下载模型；歌曲、分轨和练习数据不会上传")
-            SettingRow("音频引擎", "六轨同步校正 · 44.1 kHz · 锁屏与蓝牙控制")
-            SettingRow("分轨说明", "吉他和钢琴为实验性声部，复杂编曲可能出现串音")
-            SettingRow("使用与免责", "版权授权 · 分轨误差 · 听力安全 · 数据保管") {
-                showDisclaimer = true
+    if (isTablet) {
+        BoxWithConstraints(Modifier.fillMaxSize().statusBarsPadding()) {
+            val useTwoPane = maxWidth >= 660.dp
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 32.dp, vertical = 24.dp),
+            ) {
+                item {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                        Column(Modifier.widthIn(max = 1040.dp).fillMaxWidth()) {
+                            Text(
+                                "设置",
+                                fontFamily = FontFamily.Serif,
+                                fontSize = 36.sp,
+                                lineHeight = 40.sp,
+                                fontWeight = FontWeight.Black,
+                            )
+                            Text(
+                                "管理本地模型、存储与应用信息",
+                                color = MutedInk,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(top = 5.dp),
+                            )
+                            Spacer(Modifier.height(30.dp))
+                            if (useTwoPane) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                                    verticalAlignment = Alignment.Top,
+                                ) {
+                                    Column(Modifier.weight(.9f)) {
+                                        Text("设备与模型", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "分轨能力保存在这台设备上",
+                                            color = MutedInk,
+                                            fontSize = 10.sp,
+                                            modifier = Modifier.padding(top = 3.dp, bottom = 12.dp),
+                                        )
+                                        ModelManagementCard(
+                                            model = model,
+                                            runtimeStatus = runtimeStatus,
+                                            canDelete = !separationRunning,
+                                            onDownload = onDownloadModel,
+                                            onPause = onPauseModel,
+                                            onDelete = { confirmModelDelete = true },
+                                        )
+                                        OutlinedButton(
+                                            onClick = onCleanup,
+                                            shape = RoundedCornerShape(12.dp),
+                                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
+                                            modifier = Modifier.padding(top = 18.dp),
+                                        ) {
+                                            Text("清理临时文件", color = Ink, fontSize = 11.sp)
+                                        }
+                                        Text(
+                                            "BandBuddy ${BuildConfig.VERSION_NAME} · 本地六轨练习机",
+                                            color = MutedInk,
+                                            fontSize = 10.sp,
+                                            modifier = Modifier.padding(top = 28.dp, bottom = 20.dp),
+                                        )
+                                    }
+                                    Column(Modifier.weight(1.1f)) {
+                                        Text("应用信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "隐私、音频引擎与许可",
+                                            color = MutedInk,
+                                            fontSize = 10.sp,
+                                            modifier = Modifier.padding(top = 3.dp, bottom = 12.dp),
+                                        )
+                                        SettingsInformation(
+                                            songsCount = songs.size,
+                                            storageBytes = storageBytes,
+                                            inCard = true,
+                                            onShowDisclaimer = { showDisclaimer = true },
+                                            onShowLicenses = { showLicenses = true },
+                                        )
+                                    }
+                                }
+                            } else {
+                                Text("设备与模型", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(12.dp))
+                                ModelManagementCard(
+                                    model = model,
+                                    runtimeStatus = runtimeStatus,
+                                    canDelete = !separationRunning,
+                                    onDownload = onDownloadModel,
+                                    onPause = onPauseModel,
+                                    onDelete = { confirmModelDelete = true },
+                                )
+                                Spacer(Modifier.height(26.dp))
+                                Text("应用信息", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(8.dp))
+                                SettingsInformation(
+                                    songsCount = songs.size,
+                                    storageBytes = storageBytes,
+                                    inCard = true,
+                                    onShowDisclaimer = { showDisclaimer = true },
+                                    onShowLicenses = { showLicenses = true },
+                                )
+                                OutlinedButton(
+                                    onClick = onCleanup,
+                                    shape = RoundedCornerShape(12.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
+                                    modifier = Modifier.padding(top = 18.dp),
+                                ) {
+                                    Text("清理临时文件", color = Ink, fontSize = 11.sp)
+                                }
+                                Text(
+                                    "BandBuddy ${BuildConfig.VERSION_NAME} · 本地六轨练习机",
+                                    color = MutedInk,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(top = 28.dp, bottom = 20.dp),
+                                )
+                            }
+                        }
+                    }
+                }
             }
-            SettingRow("开源许可", "Demucs · LiteRT · Qualcomm QNN · AndroidX") { showLicenses = true }
-            OutlinedButton(
-                onClick = onCleanup,
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
-                modifier = Modifier.padding(top = 18.dp)
-            ) { Text("清理临时文件", color = Ink, fontSize = 11.sp) }
-            Spacer(Modifier.height(44.dp))
-            Text(
-                "BandBuddy ${BuildConfig.VERSION_NAME} · 本地六轨练习机",
-                color = MutedInk,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(bottom = 20.dp),
-            )
+        }
+    } else {
+        LazyColumn(
+            Modifier.fillMaxSize().statusBarsPadding(),
+            contentPadding = PaddingValues(horizontal = 27.dp, vertical = 16.dp),
+        ) {
+            item {
+                Text("‹", fontSize = 35.sp, modifier = Modifier.clickable(onClick = onBack))
+                Spacer(Modifier.height(28.dp))
+                Text("设置", fontFamily = FontFamily.Serif, fontSize = 35.sp, fontWeight = FontWeight.Black)
+                Spacer(Modifier.height(28.dp))
+                ModelManagementCard(
+                    model = model,
+                    runtimeStatus = runtimeStatus,
+                    canDelete = !separationRunning,
+                    onDownload = onDownloadModel,
+                    onPause = onPauseModel,
+                    onDelete = { confirmModelDelete = true },
+                )
+                Spacer(Modifier.height(16.dp))
+                SettingsInformation(
+                    songsCount = songs.size,
+                    storageBytes = storageBytes,
+                    inCard = false,
+                    onShowDisclaimer = { showDisclaimer = true },
+                    onShowLicenses = { showLicenses = true },
+                )
+                OutlinedButton(
+                    onClick = onCleanup,
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 7.dp),
+                    modifier = Modifier.padding(top = 18.dp)
+                ) { Text("清理临时文件", color = Ink, fontSize = 11.sp) }
+                Spacer(Modifier.height(44.dp))
+                Text(
+                    "BandBuddy ${BuildConfig.VERSION_NAME} · 本地六轨练习机",
+                    color = MutedInk,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(bottom = 20.dp),
+                )
+            }
         }
     }
     if (confirmModelDelete) {
@@ -1222,6 +1692,37 @@ private fun SettingsScreen(
     }
     if (showDisclaimer) {
         UsageDisclaimerDialog(onDismiss = { showDisclaimer = false })
+    }
+}
+
+@Composable
+private fun SettingsInformation(
+    songsCount: Int,
+    storageBytes: Long,
+    inCard: Boolean,
+    onShowDisclaimer: () -> Unit,
+    onShowLicenses: () -> Unit,
+) {
+    val content: @Composable () -> Unit = {
+        SettingRow("本地曲库", "$songsCount 首 · ${formatBytes(storageBytes)}")
+        SettingRow("隐私", "仅联网下载模型；歌曲、分轨和练习数据不会上传")
+        SettingRow("音频引擎", "六轨同步校正 · 44.1 kHz · 锁屏与蓝牙控制")
+        SettingRow("分轨说明", "吉他和钢琴为实验性声部，复杂编曲可能出现串音")
+        SettingRow("使用与免责", "版权授权 · 分轨误差 · 听力安全 · 数据保管", onShowDisclaimer)
+        SettingRow("开源许可", "Demucs · LiteRT · Qualcomm QNN · AndroidX", onShowLicenses)
+    }
+    if (inCard) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(horizontal = 18.dp, vertical = 4.dp)) {
+                content()
+            }
+        }
+    } else {
+        content()
     }
 }
 
@@ -1440,6 +1941,84 @@ private fun EditSongDialog(
 }
 
 @Composable
+internal fun TabletNavigationRail(
+    selected: AppScreen,
+    onLibrary: () -> Unit,
+    onPractice: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .width(TabletRailWidth)
+            .fillMaxHeight()
+            .statusBarsPadding()
+            .background(Ink)
+            .navigationBarsPadding()
+            .padding(horizontal = 10.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        AppIcon(Modifier.size(40.dp))
+        Text(
+            "BandBuddy",
+            color = Color(0xFFF7F0E7),
+            fontFamily = FontFamily.Serif,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier.padding(top = 7.dp),
+        )
+        Spacer(Modifier.height(34.dp))
+        TabletRailItem(
+            icon = "●",
+            label = "曲库",
+            selected = selected == AppScreen.LIBRARY,
+            onClick = onLibrary,
+        )
+        Spacer(Modifier.height(10.dp))
+        TabletRailItem(
+            icon = "♫",
+            label = "练习室",
+            selected = selected == AppScreen.PRACTICE,
+            onClick = onPractice,
+        )
+        Spacer(Modifier.weight(1f))
+        TabletRailItem(
+            icon = "⚙",
+            label = "设置",
+            selected = selected == AppScreen.SETTINGS,
+            onClick = onSettings,
+        )
+    }
+}
+
+@Composable
+private fun TabletRailItem(
+    icon: String,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val foreground = if (selected) Ink else Color(0xFFC9C0B7)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) Paper else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 11.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(icon, color = foreground, fontSize = 18.sp)
+        Text(
+            label,
+            color = foreground,
+            fontSize = 10.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            modifier = Modifier.padding(top = 3.dp),
+        )
+    }
+}
+
+@Composable
 private fun BottomBar(selected: AppScreen, onLibrary: () -> Unit, onPractice: () -> Unit) {
     val dark = selected == AppScreen.PRACTICE
     val background = if (dark) Ink else Paper
@@ -1461,8 +2040,18 @@ private fun NavItem(icon: String, label: String, selected: Boolean, dark: Boolea
 }
 
 @Composable
-private fun ToastBanner(text: String, modifier: Modifier) {
-    Text(text, color = Color.White, fontSize = 12.sp, modifier = modifier.navigationBarsPadding().padding(bottom = 70.dp).clip(RoundedCornerShape(12.dp)).background(Ink).padding(horizontal = 15.dp, vertical = 10.dp))
+private fun ToastBanner(text: String, isTablet: Boolean, modifier: Modifier) {
+    Text(
+        text,
+        color = Color.White,
+        fontSize = 12.sp,
+        modifier = modifier
+            .navigationBarsPadding()
+            .padding(bottom = if (isTablet) 22.dp else 70.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Ink)
+            .padding(horizontal = 15.dp, vertical = 10.dp),
+    )
 }
 
 @Composable
