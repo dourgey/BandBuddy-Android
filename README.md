@@ -91,3 +91,21 @@ NPU/QNN 专项测试需要兼容的 Qualcomm 真机；CPU 回退、原生 DSP �
 项目许可见 [LICENSE](LICENSE)。HTDemucs、TensorFlow Lite、Kiss FFT、PocketFFT、QNN 运行时及相关组件的版权与许可信息见 [THIRD_PARTY_NOTICES.txt](app/src/main/assets/THIRD_PARTY_NOTICES.txt)。
 
 请只处理您拥有合法权利或已获授权的音频。自动分轨与节拍分析可能产生串音、漏音、相位变化或识别偏差，结果适合练习和辅助参考，不保证达到专业制作、演出或出版标准。
+
+## 支持项目
+
+如果 BandBuddy 对你有帮助，也欢迎在有余力的情况下请作者喝杯咖啡 ☕。每一份支持都会为项目的持续维护带来动力；赞助完全自愿，请量力而行。
+
+若希望在后续的赞助名单中留名，请在付款时备注希望展示的昵称或 GitHub 用户名；未备注将默认匿名。
+
+<p align="center">
+  <a href="docs/assets/wechat-pay.jpg">
+    <img src="docs/assets/wechat-pay.jpg" alt="微信收款码" width="280">
+  </a>
+  &nbsp;&nbsp;
+  <a href="docs/assets/alipay-pay.jpg">
+    <img src="docs/assets/alipay-pay.jpg" alt="支付宝收款码" width="280">
+  </a>
+</p>
+
+<p align="center">微信支付 · 支付宝（点击图片可查看原图）</p>
