@@ -399,7 +399,7 @@ F1 片段的 Torch 上下文实验：
 
 ## 8. 第六步：设计并验证混合 NPU 图
 
-生产运行时见 [`ModelRuntime.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/ModelRuntime.kt)。
+生产运行时见 [`ModelRuntime.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/ModelRuntime.kt)。
 
 ### 8.1 把 3,504 个节点全部交给 HTP 时遇到的问题
 
@@ -561,7 +561,7 @@ nativeStftMatchesPyTorchAndReconstructsTheWindow
 
 ## 10. 第八步：Android 中的一次窗口推理
 
-[`DemucsWindowSeparator.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/DemucsWindowSeparator.kt) 把一次窗口分离固定为三段：
+[`DemucsWindowSeparator.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/DemucsWindowSeparator.kt) 把一次窗口分离固定为三段：
 
 ```text
 native preprocess
@@ -616,11 +616,11 @@ NativeDemucsBridge.postprocess(frequency, time, output)
 
 ## 11. 第九步：长歌曲如何变成六条连续音轨
 
-长音频逻辑位于 [`LongSongSeparator.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/LongSongSeparator.kt)。
+长音频逻辑位于 [`LongSongSeparator.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/LongSongSeparator.kt)。
 
 ### 11.1 统一输入格式
 
-[`AudioDecoder.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/AudioDecoder.kt) 用 Android `MediaExtractor + MediaCodec` 解码本地音频。
+[`AudioDecoder.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/AudioDecoder.kt) 用 Android `MediaExtractor + MediaCodec` 解码本地音频。
 
 内部标准格式：
 
@@ -705,7 +705,7 @@ stride     257,985
 
 当前实现为六轨各保留一个持续存活的 AAC-LC 编码器，不会为每个窗口单独生成 MP3。
 
-见 [`AacM4aWriter.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/AacM4aWriter.kt)。
+见 [`AacM4aWriter.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/AacM4aWriter.kt)。
 
 每条轨道参数：
 
@@ -1144,8 +1144,8 @@ adb install -r -t -g app\build\outputs\apk\debug\app-debug.apk
 adb install -r -t -g app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk
 
 adb shell am instrument -w -r `
-  -e class "com.lonelyme.bandbuddy.DemucsInferenceInstrumentedTest#zeroWindowRunsThroughNativeDspAndQnnHtpCore" `
-  com.lonelyme.bandbuddy.test/androidx.test.runner.AndroidJUnitRunner
+  -e class "cn.lonelyme.bandbuddy.DemucsInferenceInstrumentedTest#zeroWindowRunsThroughNativeDspAndQnnHtpCore" `
+  cn.lonelyme.bandbuddy.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 然后检查日志中是否同时存在：
@@ -1165,7 +1165,7 @@ QnnGraph_execute done. status 0x0
 [`backend-candidate-validation.md`](backend-candidate-validation.md)。
 
 设备端候选由
-[`InferenceBackendCandidateInstrumentedTest.kt`](../app/src/androidTest/java/com/lonelyme/bandbuddy/InferenceBackendCandidateInstrumentedTest.kt)
+[`InferenceBackendCandidateInstrumentedTest.kt`](../app/src/androidTest/java/cn/lonelyme/bandbuddy/InferenceBackendCandidateInstrumentedTest.kt)
 逐进程运行；可执行候选再由
 [`validate_backend_candidates.py`](../tools/validate_backend_candidates.py)
 统一对照固定官方 Torch 权重。
@@ -1176,13 +1176,13 @@ QnnGraph_execute done. status 0x0
 
 ### Android 运行时
 
-- [`ModelRuntime.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/ModelRuntime.kt)：QNN/HTP 分区、缓存、tensor ABI。
-- [`DemucsWindowSeparator.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/DemucsWindowSeparator.kt)：单窗口 direct buffer 推理。
+- [`ModelRuntime.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/ModelRuntime.kt)：QNN/HTP 分区、缓存、tensor ABI。
+- [`DemucsWindowSeparator.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/DemucsWindowSeparator.kt)：单窗口 direct buffer 推理。
 - [`native_demucs.cpp`](../app/src/main/cpp/native_demucs.cpp)：STFT、iSTFT、reflect/crop、两分支相加。
-- [`LongSongSeparator.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/LongSongSeparator.kt)：长音频分块、overlap-add、流式写轨。
-- [`AudioDecoder.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/AudioDecoder.kt)：解码和 44.1 kHz 标准化。
-- [`AacM4aWriter.kt`](../app/src/main/java/com/lonelyme/bandbuddy/engine/AacM4aWriter.kt)：连续 AAC/M4A 编码和 priming 修正。
-- [`SeparationWorker.kt`](../app/src/main/java/com/lonelyme/bandbuddy/worker/SeparationWorker.kt)：单任务、前台通知、取消和失败状态。
+- [`LongSongSeparator.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/LongSongSeparator.kt)：长音频分块、overlap-add、流式写轨。
+- [`AudioDecoder.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/AudioDecoder.kt)：解码和 44.1 kHz 标准化。
+- [`AacM4aWriter.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/engine/AacM4aWriter.kt)：连续 AAC/M4A 编码和 priming 修正。
+- [`SeparationWorker.kt`](../app/src/main/java/cn/lonelyme/bandbuddy/worker/SeparationWorker.kt)：单任务、前台通知、取消和失败状态。
 
 ### 转换与评测
 
@@ -1193,8 +1193,8 @@ QnnGraph_execute done. status 0x0
 - [`tools/validate_device_against_torch.py`](../tools/validate_device_against_torch.py)：手机 raw tensor/final PCM 对原始 Torch。
 - [`tools/validate_e2e_stems_against_torch.py`](../tools/validate_e2e_stems_against_torch.py)：最终六个 M4A 对 Torch 长音频流程。
 - [`tools/validate_backend_candidates.py`](../tools/validate_backend_candidates.py)：NPU/GPU 候选的双真实窗口 Torch 质量门禁。
-- [`DemucsInferenceInstrumentedTest.kt`](../app/src/androidTest/java/com/lonelyme/bandbuddy/DemucsInferenceInstrumentedTest.kt)：真机 DSP、QNN、AAC、播放和端到端测试。
-- [`InferenceBackendCandidateInstrumentedTest.kt`](../app/src/androidTest/java/com/lonelyme/bandbuddy/InferenceBackendCandidateInstrumentedTest.kt)：HTP/GPU FP16/FP32 候选矩阵。
+- [`DemucsInferenceInstrumentedTest.kt`](../app/src/androidTest/java/cn/lonelyme/bandbuddy/DemucsInferenceInstrumentedTest.kt)：真机 DSP、QNN、AAC、播放和端到端测试。
+- [`InferenceBackendCandidateInstrumentedTest.kt`](../app/src/androidTest/java/cn/lonelyme/bandbuddy/InferenceBackendCandidateInstrumentedTest.kt)：HTP/GPU FP16/FP32 候选矩阵。
 
 ### 当前核心报告
 
