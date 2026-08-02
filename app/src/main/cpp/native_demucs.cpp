@@ -108,17 +108,17 @@ jlong bufferCapacity(JNIEnv* env, jobject buffer) {
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_lonelyme_bandbuddy_engine_NativeDemucsBridge_contractSummary(JNIEnv* env, jobject) {
+Java_cn_lonelyme_bandbuddy_engine_NativeDemucsBridge_contractSummary(JNIEnv* env, jobject) {
     return env->NewStringUTF("htdemucs_6s: 44.1kHz stereo, variable window, 4096 FFT, 1024 hop, 6 stems");
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_lonelyme_bandbuddy_engine_NativeDemucsBridge_supportsCurrentAbi(JNIEnv*, jobject) {
+Java_cn_lonelyme_bandbuddy_engine_NativeDemucsBridge_supportsCurrentAbi(JNIEnv*, jobject) {
     return JNI_TRUE;
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_lonelyme_bandbuddy_engine_NativeDemucsBridge_preprocess(
+Java_cn_lonelyme_bandbuddy_engine_NativeDemucsBridge_preprocess(
         JNIEnv* env, jobject, jobject mixBuffer, jobject specBuffer) {
     const jlong mixCount = bufferCapacity(env, mixBuffer);
     const jlong specCount = bufferCapacity(env, specBuffer);
@@ -163,7 +163,7 @@ Java_com_lonelyme_bandbuddy_engine_NativeDemucsBridge_preprocess(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_lonelyme_bandbuddy_engine_NativeDemucsBridge_postprocess(
+Java_cn_lonelyme_bandbuddy_engine_NativeDemucsBridge_postprocess(
         JNIEnv* env, jobject, jobject frequencyBuffer, jobject timeBuffer, jobject outputBuffer) {
     const jlong frequencyCount = bufferCapacity(env, frequencyBuffer);
     const jlong waveformCount = bufferCapacity(env, timeBuffer);

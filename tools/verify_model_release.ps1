@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$specPath = Join-Path $ProjectRoot "app\src\main\java\com\lonelyme\bandbuddy\model\ModelSpec.kt"
+$specPath = Join-Path $ProjectRoot "app\src\main\java\cn\lonelyme\bandbuddy\model\ModelSpec.kt"
 $manifestPath = Join-Path $ProjectRoot "modelscope\bandbuddy-model.json"
 $assetPath = Join-Path $ProjectRoot "app\src\main\assets\models\htdemucs_6s.core.tflite"
 
@@ -75,4 +75,3 @@ if (Test-Path -LiteralPath $assetPath) {
 Write-Output "Model release verified: $($manifest.repository)@$($expected.Revision)"
 Write-Output "Artifact: $($expected.File) ($($expected.Bytes) bytes)"
 Write-Output "SHA-256: $actualHash"
-
