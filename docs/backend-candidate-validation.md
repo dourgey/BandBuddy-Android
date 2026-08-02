@@ -73,14 +73,14 @@ XNNPACK FP32，4 线程
 ## 复现
 
 设备候选入口为
-[`InferenceBackendCandidateInstrumentedTest.kt`](../app/src/androidTest/java/com/lonelyme/bandbuddy/InferenceBackendCandidateInstrumentedTest.kt)。
+[`InferenceBackendCandidateInstrumentedTest.kt`](../app/src/androidTest/java/cn/lonelyme/bandbuddy/InferenceBackendCandidateInstrumentedTest.kt)。
 候选必须逐个启动 instrumentation 进程，避免 delegate/cache/显存状态互相污染：
 
 ```powershell
 adb shell am instrument -w -r `
-  -e class com.lonelyme.bandbuddy.InferenceBackendCandidateInstrumentedTest#exportsTwoRealWindowsForTorchGate `
+  -e class cn.lonelyme.bandbuddy.InferenceBackendCandidateInstrumentedTest#exportsTwoRealWindowsForTorchGate `
   -e backendCandidate production `
-  com.lonelyme.bandbuddy.test/androidx.test.runner.AndroidJUnitRunner
+  cn.lonelyme.bandbuddy.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
 Android 14 的 app-specific external storage 会拒绝应用读取由 `adb shell`
@@ -89,7 +89,7 @@ Android 14 的 app-specific external storage 会拒绝应用读取由 `adb shell
 ```powershell
 adb push build\calibration\device-8s\f1.interleaved.f32le /data/local/tmp/bandbuddy-f1.interleaved.f32le
 adb shell chmod 644 /data/local/tmp/bandbuddy-f1.interleaved.f32le
-adb shell "run-as com.lonelyme.bandbuddy sh -c 'mkdir -p files/backend-matrix-input && cp /data/local/tmp/bandbuddy-f1.interleaved.f32le files/backend-matrix-input/f1.interleaved.f32le'"
+adb shell "run-as cn.lonelyme.bandbuddy sh -c 'mkdir -p files/backend-matrix-input && cp /data/local/tmp/bandbuddy-f1.interleaved.f32le files/backend-matrix-input/f1.interleaved.f32le'"
 ```
 
 输出拉回后，用固定官方 Torch 权重验收：

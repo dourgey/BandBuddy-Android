@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -5,9 +7,15 @@ plugins {
 
 val modelScopeRepository = providers.gradleProperty("BAND_BUDDY_MODELSCOPE_REPOSITORY")
     .orElse("Zzzzzzorz/BandBuddy-HTDemucs-6s")
+val releaseKeystorePropertiesFile = rootProject.file("keystore.properties")
+val releaseKeystoreProperties = Properties().apply {
+    if (releaseKeystorePropertiesFile.isFile) {
+        releaseKeystorePropertiesFile.inputStream().use(::load)
+    }
+}
 
 android {
-    namespace = "com.lonelyme.bandbuddy"
+    namespace = "cn.lonelyme.bandbuddy"
     compileSdk {
         version = release(36) {
             minorApiLevel = 1
@@ -15,13 +23,13 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.lonelyme.bandbuddy"
+        applicationId = "cn.lonelyme.bandbuddy"
         // The product target is Android 10 and above. Keeping this at 29 also
         // lets the connected physical device run the development build.
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.3"
+        versionCode = 6
+        versionName = "1.3.2"
         buildConfigField("String", "MODELSCOPE_REPOSITORY", "\"${modelScopeRepository.get()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -35,11 +43,18 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            releaseKeystoreProperties.getProperty("storeFile")?.let { storeFile = file(it) }
+            releaseKeystoreProperties.getProperty("storePassword")?.let { storePassword = it }
+            releaseKeystoreProperties.getProperty("keyAlias")?.let { keyAlias = it }
+            releaseKeystoreProperties.getProperty("keyPassword")?.let { keyPassword = it }
+        }
+    }
+
     buildTypes {
         release {
-            // Installable tester release. Replace this with the product
-            // keystore before publishing through an app store.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             optimization {
                 enable = false
             }
